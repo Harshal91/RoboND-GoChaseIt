@@ -1,0 +1,113 @@
+#include "ros/ros.h"
+#include "ball_chaser/DriveToTarget.h"
+#include  <sensor_msgs/Image.h>
+
+// Define global client to request services
+
+ros::ServiceClient client;
+
+// This function calls the command_robot service
+
+void drive_robot(float lin_x, float ang_z)
+{
+  ROS_INFO_STREAM("Drive Robot- LinX and AngZ:"<< linx_x << ang_z );
+
+  ball_chaser::DriveToTarget srv;
+
+  srv.request.linear_x  = lin_x;
+  srv.request.angular_z = ang_z;
+
+  if (!client.call(srv))
+    ROS_ERROR("Failed to call drive_robot");
+  
+}
+
+// This callback function continuosly executes and reads the image data
+
+void process_image_callback(const sensor_msgs::Image img)
+{
+  int white_pixel = 255;   
+  int ball_pos = 0;
+  float linx = 0;
+  float angz = 0;
+  int found = 0;
+
+  // Loop through the each pixel and check if there is a white one
+  // Then, identify if this falls in left, mid or right side of the image.
+  // Depending on that, call the drive_bot function and pass velocities to it.
+  // Request a stop when ball is not found.
+  
+  for (int i = 0 ; i < img.height*img.step ; i= i+3)
+    {
+            			    
+      if(img.data[i] == white_pixel && img.data[i+1] == white_pixel && img.data[i+2] == white_pixel  )
+	{  
+
+	 ROS_INFO_STREAM("BallFound");
+	 
+	 // Position of ball pixel wrt to the camera grid.  
+	 ball_pos  = i % img.step ;
+
+	 // Ball found flag
+	 found = 1;
+	 break;
+
+	 }
+      
+    }
+  
+  if(found ==1)
+    {
+      int leftrange = img.step/3;
+      int midrange = (2*img.step)/3;
+      int rightrange = img.step; 
+      
+	  if (col >= 0 &&  col <= leftrange)
+	    { 
+	      ROS_INFO_STREAM("Left");
+	      linx = 0;
+	      angz = 0.5;	      
+	     }
+	  else if (ball_pos > leftrange && ball_pos <= midrange )
+	    { 
+	      ROS_INFO_STREAM("Straight");
+	      linx = 1;
+	      angz =  0;	      
+	    }
+	  else if (ball_pos > midrange && ball_pos <= rightrange)
+	    { 
+	      ROS_INFO_STREAM("Right");
+	      linx = 0;
+	      angz = -0.5;	      
+	    }
+    }
+  else
+    { // Ball Not Found , Stop !
+      ROS_INFO_STREAM("Ball Not Found, Stopped !");
+      linx = 0;
+      angz = 0;
+    }
+  
+  drive_robot(linx,angz);
+    
+}
+
+
+int main(int argc, char** argv)
+{
+  // Initialize process_image node and create a handle
+  ros::init(argc,argv,"process_image");
+  ros::NodeHandle n;
+
+  // Define a service client
+    client = n.serviceClient<ball_chaser::DriveToTarget>("/ball_chaser/command_robot");
+
+    // Subscribe to image_raw topic
+  ros::Subscriber sub1 = n.subscribe("camera/rgb/image_raw",10,process_image_callback);
+
+  ros::spin();
+
+  return 0;
+  
+}
+
